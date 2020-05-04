@@ -1,7 +1,8 @@
-import rk
-import numpy
+
+import numpy, random
 import datetime, collections
 import matplotlib.pyplot as plt
+import rk
 
 
 ## python2.7
@@ -12,11 +13,74 @@ from scipy.signal import savgol_filter
 ## y1: numbers showing symptoms and infectious
 ## y2: numbers that are critical
 
-def mint(s):
-  if s == "":
-    return 0
-  else:
-    return int(s)
+def relax_linear_fit(obs,w,relative_w = None, end_weighting={"lfrac":30, "amp":2}):
+    """Fitting (d^2/dt^2 - z^t z) res = w(res-obs)"""
+    res = obs[:]
+    m0 = 0
+    for x in obs:
+      m0 += x**2
+    imx = numpy.argmax( obs )
+    m0 = numpy.sqrt( m0/len( obs ) )
+
+    if relative_w == None:
+      ww = [w,]*len(obs)
+    else:
+      ww = [x*w for x in relative_w]
+
+    if end_weighting != None:
+      nn = (len(obs)*end_weighting["lfrac"])/100
+      sc = [0.]*nn
+      for i in range(nn):
+        sc[i] = 1. + i*float( end_weighting["amp"] - 1 )/(nn-1)
+      for i in range(nn):
+        ww[i] = ww[i]*sc[nn-1-i]
+        ww[len(obs)-1-i] = ww[len(obs)-1-i]*sc[nn-1-i]
+
+    flipper = 0
+    for k in range(4000):
+      f = [0,]*len(obs)
+      s = 0.
+      for i0 in range( 1,len(obs)-1 ):
+        i = i0*(1-flipper) + (len(obs) -1 - i0)*flipper
+        try:
+          s += (res[i]-obs[i])**2 + (res[i-1] - 2.*res[i] + res[i+1])**2
+
+          f[i] = res[i-1] - 2.*res[i] + res[i+1] - ww[i]*(res[i]-obs[i])
+          res[i] = res[i] + 1.0*f[i]/(2.+ww[i])
+        except:
+          print (flipper, i, i0 )
+          raise
+
+      s = numpy.sqrt( s/len( obs ) )
+      ##if (k/100)*100 == k:
+        ##print (k,s, s/m0, [res[i] - obs[i] for i in range(imx-5,imx+5)] )
+      if s < m0*0.001:
+        return res
+      res[0] = res[1]
+      res[-1] = res[-2]
+      flipper = 1 - flipper
+    return res
+
+def relax_linear_matrix_fit(obs,ix,zz0,w):
+    res = numpy.zeros( (len(obs),4), dtype="float" )
+    res[:,ix] = obs[:]
+    m0 = 0
+    for x in obs:
+      m0 += x**2
+    m0 = numpy.sqrt( m0/len( obs ) )
+    for k in range(200):
+      f = [0,]*len(obs)
+      s = 0.
+      for i in range( 1,len(obs)-1 ):
+        s += (res[i]-obs[i])**2 + (res[i-1,ix] - 2.*res[i,ix] + res[i+1,ix])**2
+        f[i] = (res[i-1,ix] - 2.*res[i,ix] + res[i+1,ix]) - w*(res[i,ix]-obs[i])
+      s = numpy.sqrt( s/len( obs ) )
+      print (k,s, s/m0, f[25:28] )
+      if s < m0*0.001:
+        return res
+      for i in range( 1,len(obs)-1 ):
+        res[i] = res[i] + 0.9*f[i]/(2.+w)
+    return res
 
 class Demo01(object):
   def __init__(self,name,g0,g1,a00, a01,a11,a12, scfac,tc,t9,model_rank=3,fac4=1.):
@@ -33,8 +97,6 @@ class Demo01(object):
       self.z0 = scfac*numpy.array( [[(-a00-a01)*fac4, 0., g0, 0.], [a01*fac4, -a00-a01,0.,0.], [0.,a01,-(a11+a12),0.],[0.,0.,a12,-.2]], dtype='float')
       self.z1 = scfac*numpy.array( [[(-a00-a01)*fac4, 0., g1, 0.], [a01*fac4, -a00-a01,0.,0.], [0.,a01,-(a11+a12),0.],[0.,0.,a12,-.2]], dtype='float') 
 
-
-
     self.w0, self.v0 = numpy.linalg.eig( self.z0 )
     self.w1, self.v1 = numpy.linalg.eig( self.z1 )
     self.f0 = lambda x,y: self.z0.dot(y)
@@ -43,28 +105,6 @@ class Demo01(object):
     self.zz1 = self.z1.transpose().dot( self.z1 )
     self.xx = []
 
-  def fit(self,ioff,obs,w):
-    """Fitting (d^2/dt^2 - z^t z) res = w(res-obs)"""
-    res = obs[:]
-    m0 = 0
-    for x in obs:
-      m0 += x**2
-    m0 = numpy.sqrt( m0/len( obs ) )
-    for k in range(50):
-      f = [0,]*len(obs)
-      s = 0.
-      for i in range( 1,len(obs)-1 ):
-        s += (res[i]-obs[i])**2 + (res[i-1] - 2.*res[i] + res[i+1] - res[i])**2
-        f[i] = res[i-1] - 2.*res[i] + res[i+1] - res[i] - w*(res[i]-obs[i])
-      s = numpy.sqrt( s/len( obs ) )
-      print (k,s, s/m0, f[25:28] )
-      if s < m0*0.001:
-        return res
-      for i in range( 1,len(obs)-1 ):
-        res[i] = res[i] + f[i]/6.
-    return res
-      
-    
   def run(self):
     x = 0.
     h = 0.1
@@ -78,8 +118,6 @@ class Demo01(object):
       for k1 in range(10):
         x,y = rk.rk4d(self.f0,x,y,h)
       self.xx.append( (x,y) )
-      ##print ('%5.2f:: %s' % (x,'%5i, %5i, %5i' % tuple( y ) ) )
-
 
     for k0 in range(self.t9):
       for k1 in range(10):
@@ -110,16 +148,12 @@ class Demo01(object):
     self.fd3 = numpy.polyfit(self.xdsc[self.imx-6:self.imx+6],self.ydsc[self.imx-6:self.imx+6],3)
     print ('model', self.fd3)
 
-
-
-a = 0.2
-r = .25
-ixl = 90
-##
 def add_plot(ax, this, col, ixl, bbox_props):
   ax.plot(this.xdsc,this.ydsc,color=col)
-  ax.plot(this.xld,this.yld, "v", color=col )
-  t = ax.text(this.xdsc[ixl],this.ydsc[ixl], "%4.2f" % this.g1, ha="left", va="center", rotation=0,
+  if this.xld != None:
+    ax.plot(this.xld,this.yld, "v", color=col )
+  if this.g1 != None:
+    t = ax.text(this.xdsc[ixl],this.ydsc[ixl], "%4.2f" % this.g1, ha="left", va="center", rotation=0,
         size=8,
         bbox=bbox_props)
 
@@ -135,37 +169,87 @@ def mrun(a,r,g0,gg, ax, color, ixl, bbox_props):
   plot_offset = False
   plot_scale = True
 
-  d = Demo01('test',g0,g1,a00,a01,a11,a12,scfac, 40,70, model_rank=4,fac4=1.0)
+  d = model.Demo01('test',g0,g1,a00,a01,a11,a12,scfac, 40,70, model_rank=4,fac4=1.0)
   d.run()
   d.review(offset=plot_offset,scale=plot_scale)
   add_plot(ax, d, color, ixl, bbox_props)
 
+
+def plot_model():
+  a = 0.2
+  r = .25
+  ixl = 90
+##a00 = a*(1-r)
+##a01 = a*r
+##a11 = a*(1-r)
+##a12 = a*r
+  g0 = 24.0
+
 ##
-f, ax = plt.subplots(1)
+  f, ax = plt.subplots(1)
+  bbox_props = dict(fc="cyan", ec="b", lw=1, boxstyle="round")
 
-bbox_props = dict(fc="cyan", ec="b", lw=1, boxstyle="round")
-mrun( a, r, g0, 0., ax, "blue", ixl, bbox_props)
-mrun( a, r, g0, 0.9, ax, "blue", ixl, bbox_props)
-mrun( a, r, g0, 1.0, ax, "blue", ixl, bbox_props)
-mrun( a, r*1.5, g0, .0, ax, "green", ixl, bbox_props)
+  mrun( a, r, g0, 0., ax, "blue", ixl, bbox_props)
+  mrun( a, r, g0, 0.9, ax, "blue", ixl, bbox_props)
+  mrun( a, r, g0, 1.0, ax, "blue", ixl, bbox_props)
+  mrun( a, r*1.5, g0, .0, ax, "green", ixl, bbox_props)
+  
+  plt.savefig("modelled_pdmc01.png", bbox_inches='tight')
 
-##d1 = Demo01('test',g0,gc,a00,a01,a11,a12,scfac, 40,70, model_rank=4,fac4=1.0)
-##d1.run()
-##d1.review(offset=plot_offset,scale=plot_scale)
+  plt.show()
 
-##d9 = Demo01('test',g0,.9*gc,a00,a01,a11,a12,scfac, 40,70, model_rank=4,fac4=1.0)
-##d9.run()
-##d9.review(offset=plot_offset,scale=plot_scale)
+class Wrap01(object):
+  def __init__(self,x,y,g1=None,xld=None):
+    self.xdsc = x
+    self.ydsc = y
+    self.g1 = g1
+    self.xld = xld
 
+def plot_relax_linear_fit(case="ex01"):
+  colors = ["purple","red","green","orange","pink","black","cyan"]
+  if case == "ex01":
+    obs = [0.,]*41
+    obs[20] = 1.
+    relw = [0.,]*41
+  ##for i in [10,90,100,110,190]:
+    for i in [15,20,25]:
+      relw[i] = 1.
+    xcoords = range(41)
+    ip = 0
+    weights = [100.,10., 1., .1, .01]
+  elif case == "ex02":
+    obs = [0.,]*201
+    for i in range( 1,200):
+      x = (i-100)*0.01
+      obs[i] = x**2 + (random.random() - 0.5)*0.5
+    relw = None
+    xcoords = range(201)
+    ip=2
+    weights = [ 1., .1, .01]
+    
+  else:
+    raise
 
-##add_plot(ax, d1, "green", ixl, bbox_props)
-##add_plot(ax, d9, "orange", ixl, bbox_props)
+  f, ax = plt.subplots(1)
+  bbox_props = dict(fc="cyan", ec="b", lw=1, boxstyle="round")
+  if case == "ex02":
+    for i in range( 1,200):
+      ax.plot(i,obs[i], "o", color="grey" )
 
-plt.savefig("modelled_pdmc01.png", bbox_inches='tight')
+  for ww in weights:
+    res = relax_linear_fit( obs, ww, relative_w=relw)
+    add_plot(ax, Wrap01(xcoords, res), colors[ip], 100, bbox_props)
 
-if plot_scale:
-  title = 'New Symptomatic Cases (scaled)' 
-else:
-  title = 'New Symptomatic Cases' 
-plt.ylabel(title)
-plt.show()
+    ip += 1
+
+  if case == "ex01":
+    ax.plot(15,0., "o", color="black" )
+    ax.plot(20,1., "o", color="black" )
+    ax.plot(25,0., "o", color="black" )
+
+  plt.savefig("relax_linear_fit_%s.png" % case, bbox_inches='tight')
+  print( obs )
+  plt.show()
+  
+if __name__ == "__main__":
+  plot_relax_linear_fit(case="ex02")
