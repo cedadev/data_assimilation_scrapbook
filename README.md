@@ -1,2 +1,5 @@
-# data_assimilation_scrapbook
-Miscellaneous work on data assimilation
+# Aata Assimilation Scrapbook
+
+Miscellaneous work on data assimilation.
+
+Scripts on data assimilation.
