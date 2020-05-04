@@ -1,4 +1,4 @@
-# Aata Assimilation Scrapbook
+# Data Assimilation Scrapbook
 
 Miscellaneous work on data assimilation.
 
