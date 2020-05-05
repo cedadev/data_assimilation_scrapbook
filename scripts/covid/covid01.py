@@ -30,10 +30,13 @@ class Addplots(object):
     self.filter_residues = dict()
 
   def extractCaseData( self, country, c):
-    x = [t[0] for t in c.data]
-    y = [t[c.ix[country]] for t in c.data]
-    x = x[1:]
-    y = [(y[i+1] - y[i]) for i in range(len(y)-1)]
+    ##x = [t[0] for t in c.data]
+    ##y = [t[c.ix[country]] for t in c.data]
+    x = c.dd["date"]
+    y = c.dd[country]
+    ##if country != "England":
+      ##x = x[1:]
+      ##y = [(y[i+1] - y[i]) for i in range(len(y)-1)]
     if country == 'China':
       yy = sum(y[:43])
       y[:43] = [1.25*z for z in y[:43]]
@@ -122,6 +125,15 @@ class Addplots(object):
       ia = annotate['xy_index']
       if ia < 0 or ia > len(xsc)-1:
         ia = len(xsc)/2
+
+      if "annotate_y" in annotate:
+        ytarg = annotate["annotate_y"]
+        ii = [i for i in range(len(xsc)-1) if (ysc[i]-ytarg)*(ysc[i+1]-ytarg) < 0]
+        if len(ii) == 0:
+          pass
+        else:
+          ia = ii[-1]
+
       xy = (xsc[ia],ysc[ia])
       xytext = annotate['xytext']
       t = ax.annotate(country, ha="left", va="center", rotation=0,
@@ -148,11 +160,11 @@ if mode == "many":
   title = '%s .. Savgoy-Gorsky[%s,%s]' % (country,ww,np)
   fntag = ""
 elif mode == "fitfew":
-  countries = ["Germany","France","Italy","Spain","Greece","China","New Zealand","United Kingdom"]
-  wlrf = 0.25
+  countries = ["China","New Zealand","Germany","France","Italy","Spain","Greece","Austria","England"]
+  wlrf = 0.02
   fntag = "_wlrf_b%3.3i" % (wlrf*100)
   title = 'Cases Reported,  linear relaxation filter[%s]' % (wlrf)
-  colors = ["purple","red","green","orange","blue","brown","magenta","black"]
+  colors = ["purple","red","green","orange","blue","brown","magenta","cyan","black"]
 
 a00 = 0.04
 a01 = 0.04
@@ -190,7 +202,7 @@ imx = numpy.argmax( yd9 )
 xdsc9 = [i-imx for i in xd9]
 ydsc9 = [z/yd9[imx] for z in yd9]
 
-c = Cases(targets=countries)
+c = Cases(targets=countries,add_england=True)
 dths = Cases(targets=countries,file="total_deaths.csv")
 c.setOther( dths )
 c.setKeyDates( get_key_dates() )
@@ -207,14 +219,14 @@ ic =0
 
 ##adder = Addplots(0.1,0.1,filter="savgolxx",filter_data = {"np":1, "ww":3} )
 
-adder = Addplots(0.0,0.0,filter="relax_linear",filter_data = {"weight":wlrf}, centre="maxg" )
+adder = Addplots(0.0,0.0,filter="relax_linear",filter_data = {"weight":wlrf}, centre="max" )
 
 ##plt.ylim(-0.1,2.0)
 annotate_dict = None
 for country in countries:
   if mode == "fitfew":
     ix = 30 + ic*8
-    annotate_dict = {"xytext":(-80.,0.3 + ic*0.08), "xy_index":(ic+1)*20 }
+    annotate_dict = {"xytext":(80.,0.3 + ic*0.08), "xy_index":(ic+1)*20, "annotate_y":0.1+ic*0.1 }
   adder.addplot_by_country( country, c, ax,color=colors[ic],filter=withFilter, annotate=annotate_dict )
   ic += 1
 

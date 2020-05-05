@@ -56,13 +56,37 @@ def get_key_dates():
       results[country].add( (jdate,key,description) )
     return results
 
-class UKCases(object):
-  def __init__(self,file="total_cases.csv",targets=["Reading",]):
+class EnglandCases(object):
+  def __init__(self,file="coronavirus-cases_latest.csv",targets=["Reading",]):
 #Area name,Area code,Area type,Specimen date,Daily lab-confirmed cases,Previously reported daily cases,Change in daily cases,Cumulative lab-confirmed cases,Previously reported cumulative cases,Change in cumulative cases
     self.other = None
+    cc = collections.defaultdict(dict)
+    sa = set()
+    for l in open(file).readlines():
+      aname,id,atype,date,cases,casesp = [x.strip() for x in l.split(",")[:6]]
+      sa.add(atype)
+      if atype in ["Region","Nation"]:
+        cc[aname][date] = (cases,casesp)
+
+    s1 = sorted( list( cc['England'].keys() ) )
+    nn = 0
+    for k in cc.keys():
+      sx = sorted( list( cc[k].keys() ) )
+      if s1 != sx:
+        print ("Mismatch in date set for %s  vs. England: len %s -- %s" % (k,len(s1),len(sx)) )
+        nn += 1
+    print ("%s data records for regions %s" % (len(s1),cc.keys()) )
+    print (sa )
+    self.dd = dict()
+    self.by_date = dict()
+    self.dd["date"] = s1
+    self.dd["England"] = [int(cc["England"][x][0]) for x in s1]
+    for k, v in cc["England"].items():
+       self.by_date[dconv.convert(k)] = int(v[0])
+        
 
 class Cases(object):
-  def __init__(self,file="total_cases.csv",targets=["Germany",]):
+  def __init__(self,file="total_cases.csv",targets=["Germany",],add_england=False):
     self.other = None
     self.key_dates = None
     date_ref = datetime.date( 2020, 1, 1 )
@@ -80,6 +104,7 @@ class Cases(object):
     ##self.ix = {x:self.headings.index(x) for x in targets}
     self.ix = {x:self.headings.index(x) for x in self.headings}
 
+
     self.dd['date'] = [t[0] for t in self.data]
     for h in self.headings[1:]:
       y = [t[self.ix[h]] for t in self.data]
@@ -90,6 +115,16 @@ class Cases(object):
           print ( "%s:  negative value: %s" % (h,y[ix]) )
         ix += -1
       self.dd[h] = y
+
+    if add_england:
+      self.addEnglandData()
+
+  def addEnglandData(self):
+    engl = EnglandCases()
+    this = []
+    for d in self.dd["date"]:
+      this.append( engl.by_date.get( d, 0 ) )
+    self.dd["England"] = this
 
   def setKeyDates(self,kd):
     self.key_dates = kd
@@ -134,3 +169,7 @@ class Cases(object):
         if this[imx] > 1000 and abs(f3[1]) < 20*abs(f3[0]):
           print( self.headings[ir], this[imx], f3 )
 
+
+
+if __name__ == "__main__":
+  ec = EnglandCases()
