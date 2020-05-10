@@ -13,6 +13,9 @@ class BasicException(Exception):
     if msg != "none":
       print (msg) 
 
+class DebugFlowControl(BasicException):
+  pass
+
 from scipy.signal import savgol_filter
 
 ## y0: numbers infected and not yet showing symtoms
@@ -28,6 +31,7 @@ class Addplots(object):
     self.scale = scale
     self.filter_data = filter_data
     self.filter_residues = dict()
+    self._extracted = dict()
 
   def extractCaseData( self, country, c):
     ##x = [t[0] for t in c.data]
@@ -42,22 +46,35 @@ class Addplots(object):
       y[:43] = [1.25*z for z in y[:43]]
       y[43] = y[43] - .25*yy
     elif country == 'Spain':
-      if y[-1] == 216582:
-        yyy = (y[-1]+y[-2])/2
-        y[-1] = y[-2] = yyy
+      if abs(y[-1]) > 50000:
+        y[-2] = c.data_mask_value
+        y[-1] = c.data_mask_value
+    
+    y = numpy.ma.masked_equal([float(yyy) for yyy in y],float(c.data_mask_value))
+    if country == 'Spain':
+      print( "SPAIN, MASKED: ",y )
+
+    ##y = [float(yyy) for yyy in y]
+    self._extracted[country] = y
 
     if self.filter != None:
       if self.filter == "savgol":
         yhat = savgol_filter(y, self.filter_data["ww"], self.filter_data["np"]) # window size 51, polynomial order 3
       elif self.filter == "relax_linear":
-        yhat = model.relax_linear_fit(y,self.filter_data["weight"])
+        yhat = model.relax_linear_fit(y,self.filter_data["weight"],masked = country in ["England","Spain"])
       else:
         raise BasicException( "Bag filter name" )
       self.filter_residues[country] = [y[i] - yhat[i] for i in range(len(y))]
     else:
-      yhat = numpy.array( y, dtype="float" )
+      yhat = y
 
     imx = numpy.argmax( yhat )
+
+    if not hasattr( yhat, "mask") or type( yhat.mask ) == numpy.bool_:
+      i99 = len(yhat)
+    else:
+      i99 = max( [i for i in range( imx, len(yhat) ) if not yhat.mask[i] ] )
+
     imxg = numpy.argmax( [yhat[i+7] - yhat[i] for i in range( len(yhat) - 7 )] ) - 3
     print ( "Date of peak: %s" % x[imx] )
     ioff = 0
@@ -75,7 +92,10 @@ class Addplots(object):
     ysc = [z/yhat[isc] + self.y0 for z in yhat]
     print ("YHAT:  ",yhat[imx-5:imx+5] )
     print ("YSC:  ",ysc[imx-5:imx+5] )
-    return imx, xsc, ysc
+    if country == "England":
+      print ("ENGLAND: %s, %s, %s" % (len(yhat),i99,type( yhat.mask )))
+      print (ysc[imx:i99+1])
+    return imx, xsc[:i99+1], ysc[:i99+1]
 
   def extractRatioData( self, country, c):
     x = [t[0] for t in c.data]
@@ -94,7 +114,7 @@ class Addplots(object):
     ysc = [z + self.y0 for z in yhat]
     return xt[0], imx, xsc, ysc
 
-  def addplot_by_country(self, country, c, ax,color,filter=True, mode="cases",fit=None, annotate=None):
+  def addplot_by_country(self, country, c, ax,color,filter=True, mode="cases",fit=None, annotate=None, arrow_right=False):
 
     try:
       if mode == "cases":
@@ -109,6 +129,12 @@ class Addplots(object):
 
     ax.plot(xsc,ysc,color=color)
     ax.plot([-50.,75.],[self.y0,]*2,'--',color=color)
+    ax.plot( xsc[-1], ysc[-1], "o", color=color )
+
+    if arrow_right:
+      ##plt.arrow(xsc[-3], ysc[-3], xsc[-1] - xsc[-3], ysc[-1] - ysc[-3], shape='full', lw=0, length_includes_head=True, head_width=.05)
+      ax.annotate("", xy=(xsc[-1], ysc[-1]), xytext=(xsc[-3], ysc[-3]),
+            arrowprops=dict(arrowstyle="->"))
 
     if c.key_dates != None and country in c.key_dates:
       for event in c.key_dates[country]:
@@ -160,11 +186,13 @@ if mode == "many":
   title = '%s .. Savgoy-Gorsky[%s,%s]' % (country,ww,np)
   fntag = ""
 elif mode == "fitfew":
-  countries = ["China","New Zealand","Germany","France","Italy","Spain","Greece","Austria","England"]
-  wlrf = 0.02
+  countries = ["China","New Zealand","Austria","Germany","France","Italy","Spain","Denmark","Greece","England"]
+  ##countries = ["China","New Zealand","Austria","Germany","France","Italy","Spain","Greece"]
+  ##countries = ["China","England"]
+  wlrf = .10
   fntag = "_wlrf_b%3.3i" % (wlrf*100)
   title = 'Cases Reported,  linear relaxation filter[%s]' % (wlrf)
-  colors = ["purple","red","green","orange","blue","brown","magenta","cyan","black"]
+  colors = ["purple","red","green","pink","orange","blue","brown","magenta","cyan","black"]
 
 a00 = 0.04
 a01 = 0.04
@@ -226,8 +254,11 @@ annotate_dict = None
 for country in countries:
   if mode == "fitfew":
     ix = 30 + ic*8
-    annotate_dict = {"xytext":(80.,0.3 + ic*0.08), "xy_index":(ic+1)*20, "annotate_y":0.1+ic*0.1 }
-  adder.addplot_by_country( country, c, ax,color=colors[ic],filter=withFilter, annotate=annotate_dict )
+    annotate_dict = {"xytext":(80.,0.3 + ic*0.08), "xy_index":(ic+1)*20, "annotate_y":0.1+ic*0.07 }
+  try:
+    adder.addplot_by_country( country, c, ax,color=colors[ic],filter=withFilter, annotate=annotate_dict )
+  except DebugFlowControl as dbg:
+    print ("Caught exception for %s" % country)
   ic += 1
 
 if mode == "many":
@@ -235,9 +266,10 @@ if mode == "many":
   ax.plot(xld,yld, "v", color="blue" )
   ax.plot(xdsc9,[y+adder.y0 for y in ydsc9],color="blue")
 else:
-  ll = len( adder.filter_residues["Germany"] )
-  total = [ sum( [v[i] for k, v in adder.filter_residues.items() if k != "Total"] ) for i in range(ll)]
-  adder.filter_residues["Total"] = total
+  if "Germany" in countries:
+    ll = len( adder.filter_residues["Germany"] )
+    total = [ sum( [v[i] for k, v in adder.filter_residues.items() if k != "Total"] ) for i in range(ll)]
+    adder.filter_residues["Total"] = total
 
 plt.savefig("covid%s.png" % fntag, bbox_inches='tight')
 

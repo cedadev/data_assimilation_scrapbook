@@ -1,5 +1,5 @@
 
-import numpy, random
+import numpy, random, scipy
 import datetime, collections
 import matplotlib.pyplot as plt
 import rk
@@ -13,13 +13,31 @@ from scipy.signal import savgol_filter
 ## y1: numbers showing symptoms and infectious
 ## y2: numbers that are critical
 
-def relax_linear_fit(obs,w,relative_w = None, end_weighting={"lfrac":30, "amp":2}):
+def relax_linear_fit(obs,w,relative_w = None, end_weighting={"lfrac":30, "amp":2}, masked=False):
     """Fitting (d^2/dt^2 - z^t z) res = w(res-obs)"""
-    res = obs[:]
+
+    if type(obs) == type( [] ):
+      res = obs[:]
+    else:
+      res = obs.copy()
+    imx = numpy.argmax( obs )
+
+    if masked:
+      mres = res.copy()
+      i99 = max( [i for i in range( imx, len(obs) ) if not obs.mask[i] ] )
+      if any( [obs.mask[i] for i in range( imx )] ):
+        i00 = max( [i for i in range( imx ) if obs.mask[i] ] ) + 1
+        mres.mask[:i00] = True
+      else:
+        i00 = 0
+      mres.mask[i99+1:] = True
+      res = res[i00:i99+1]
+      obs = obs[i00:i99+1]
+      imx = numpy.argmax( obs )
+
     m0 = 0
     for x in obs:
       m0 += x**2
-    imx = numpy.argmax( obs )
     m0 = numpy.sqrt( m0/len( obs ) )
 
     if relative_w == None:
@@ -32,34 +50,62 @@ def relax_linear_fit(obs,w,relative_w = None, end_weighting={"lfrac":30, "amp":2
       sc = [0.]*nn
       for i in range(nn):
         sc[i] = 1. + i*float( end_weighting["amp"] - 1 )/(nn-1)
+
       for i in range(nn):
         ww[i] = ww[i]*sc[nn-1-i]
         ww[len(obs)-1-i] = ww[len(obs)-1-i]*sc[nn-1-i]
 
-    flipper = 0
-    for k in range(4000):
-      f = [0,]*len(obs)
-      s = 0.
-      for i0 in range( 1,len(obs)-1 ):
-        i = i0*(1-flipper) + (len(obs) -1 - i0)*flipper
-        try:
-          s += (res[i]-obs[i])**2 + (res[i-1] - 2.*res[i] + res[i+1])**2
 
-          f[i] = res[i-1] - 2.*res[i] + res[i+1] - ww[i]*(res[i]-obs[i])
-          res[i] = res[i] + 1.0*f[i]/(2.+ww[i])
-        except:
-          print (flipper, i, i0 )
-          raise
+    use_numpy = True
 
-      s = numpy.sqrt( s/len( obs ) )
-      ##if (k/100)*100 == k:
-        ##print (k,s, s/m0, [res[i] - obs[i] for i in range(imx-5,imx+5)] )
-      if s < m0*0.001:
-        return res
-      res[0] = res[1]
-      res[-1] = res[-2]
+    if use_numpy:
+      ab = numpy.zeros( (3,len(obs)), "float" )
+      b = numpy.zeros( (len(obs)), "float" )
+      ab[0,1:] = - 1.
+      ab[2,:-1] = - 1.
+      for i in range(len(obs)):
+        ab[1,i] = 2. + ww[i]
+        b[i] = obs[i]*ww[i]
+      ab[1,0] = 1. + ww[i]
+      ab[1,len(obs)-1] = 1. + ww[i]
+      res = scipy.linalg.solve_banded( (1,1), ab, b )
+
+    else:
+
+      flipper = 0
+      for k in range(4000):
+        f = [0,]*len(obs)
+        s = 0.
+        for i0 in range( 1,len(obs)-1 ):
+          i = i0*(1-flipper) + (len(obs) -1 - i0)*flipper
+          try:
+            s += (res[i]-obs[i])**2 + (res[i-1] - 2.*res[i] + res[i+1])**2
+  
+            f[i] = res[i-1] - 2.*res[i] + res[i+1] - ww[i]*(res[i]-obs[i])
+            res[i] = res[i] + 1.0*f[i]/(2.+ww[i])
+          except:
+            print (flipper, i, i0 )
+            raise
+
+        s = numpy.sqrt( s/len( obs ) )
+        ##if (k/100)*100 == k:
+          ##print (k,s, s/m0, [res[i] - obs[i] for i in range(imx-5,imx+5)] )
+        if s < m0*0.001:
+          if masked:
+            mres[i00:i99+1] = res[:]
+            return mres
+          else:
+            return res
+
+      res[0] = max( [0., 2*res[1] - res[2]] )
+      res[-1] = max( [0., 2*res[-2] - res[-3]] )
       flipper = 1 - flipper
-    return res
+
+    if masked:
+      mres[i00:i99+1] = res[:]
+      return mres
+    else:
+      return res
 
 def relax_linear_matrix_fit(obs,ix,zz0,w):
     res = numpy.zeros( (len(obs),4), dtype="float" )
