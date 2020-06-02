@@ -246,12 +246,51 @@ class ACAPS(object):
               'Moldova Republic Of':'Moldova Republic of',
               'kenya':'Kenya' }
 
+    cc = collections.defaultdict(set)
+
+    self.data = collections.defaultdict( lambda : collections.defaultdict(set) )
+    self.regions_by_country =  collections.defaultdict(set)
+
+    ccm = {'regions':3, 'log_type':6, 'category':7, 'measure':8 }
+
+
     for i in range(1,s.nrows):
+        
         kk += 1
         this = s.row(i)[1].value
-        if (kk//20)*20 == kk:
-          print( kk,  this  )
-        self.countries.add( cmap.get(this,this)  )
+        if this != '':
+          rec = s.row(i)
+          region = s.row(i)[ccm['regions']].value
+          for k,v in ccm.items():
+            cc[k].add( s.row(i)[v].value )
+
+          if type( rec[12].value ) == type( 0. ):
+            dt = xlrd.xldate.xldate_as_datetime(rec[12].value, wb.datemode)
+          else:
+            print ("Unexpected date type ... %s:" % type( rec[12].value ) )
+            print (rec[12].value)
+            print (rec)
+            continue
+
+          jday = dt.timetuple().tm_yday
+
+          data_key = this
+          if region != '':
+            data_key += ' (%s)' % region
+            self.regions_by_country[this].add( data_key )
+          self.data[data_key][jday].add( tuple( [rec[ccm[x]].value for x in ['log_type','category','measure']]) )
+
+          if s.row(i)[7].value in [42,'42']:
+             print ('42:  %s, %s' % (i,this) )
+
+          if (kk//200)*200 == kk:
+            print( kk,  this  )
+          self.countries.add( cmap.get(this,this)  )
+
+    for k in sorted( list( cc.keys() ) ):
+      print ( "%s :: %s" % (k,cc[k]) )
+
+        
 
 class JH_Covid(object):
   def __init__(self):
