@@ -2,6 +2,7 @@ import rk
 import numpy
 import xlrd
 import datetime, collections, os
+import pandas
 """ Provides: 
   * get_key_dates
   * Cases 
@@ -16,9 +17,14 @@ import datetime, collections, os
 ## y1: numbers showing symptoms and infectious
 ## y2: numbers that are critical
 
+english_regions = ["South West", "South East", "London", "East of England", "West Midlands",
+                "East Midlands", "Yorkshire and The Humber", "North West", "North East"] 
+
 def mint(s):
   if s == "":
     return 0
+  elif s.find('.') != -1:
+    return float(s)
   else:
     return int(s)
 
@@ -30,10 +36,12 @@ class DateConv(object):
   def _ord(self,ds):
       year, month, day = [int(x) for x in ds.split( "-" )]
       date = datetime.date( year, month, day )
+      self.date = date
       return date.toordinal()
 
   def convert(self,ds):
-    return self._ord(ds) - self.oref
+    return self.date.timetuple().tm_yday
+    ##return self._ord(ds) - self.oref
 
 dconv = DateConv()
 
@@ -88,17 +96,24 @@ class EnglandCases(object):
     print ("%s data records for regions %s" % (len(s1),cc.keys()) )
     print (sa )
     self.dd = dict()
-    self.by_date = dict()
+    self.by_date = collections.defaultdict( dict )
     self.dd["date"] = s1
-    self.dd["England"] = [int(cc["England"][x][0]) for x in s1]
-    for k, v in cc["England"].items():
-       if k in s1:
-         self.by_date[dconv.convert(k)] = int(v[0])
+
+    for region in ["England",] :
+##+ english_regions:
+      s1 = sorted( list( cc[region].keys() ) )
+      self.dd[region] = [mint(cc[region][x][0]) for x in s1]
+      for k, v in cc[region].items():
+        if k in s1:
+          self.by_date[region][dconv.convert(k)] = mint(v[0])
 
     if end_truncate > 0:
       ks = sorted( list( self.by_date.keys() ) )
-      for i in range(1,end_truncate+1):
-        self.by_date[ks[-i]] = self.data_mask_value
+      if len(ks) > end_truncate + 1:
+        for i in range(1,end_truncate+1):
+          self.by_date[region][ks[-i]] = self.data_mask_value
+      else:
+        print ("WARNING: request to trincate > data length: %s > %s" % (end_truncate, len(ks)) )
 
     wb = Workbook( "data/COVID-19-total-announced-deaths-5-May-2020.xlsx" )
     assert "COVID19 total deaths by region" in wb.sns
@@ -141,12 +156,17 @@ class Cases(object):
     if add_england:
       self.addEnglandData()
 
-  def addEnglandData(self):
+  def addEnglandData(self, with_regions=True):
     engl = EnglandCases(mask_value=self.data_mask_value)
-    this = []
-    for d in self.dd["date"]:
-      this.append( engl.by_date.get( d, self.data_mask_value ) )
-    self.dd["England"] = this
+    regions = ["England",]
+    if with_regions and False:
+      regions += english_regions
+    
+    for region in regions:
+      this = []
+      for d in self.dd["date"]:
+        this.append( engl.by_date[region].get( d, self.data_mask_value ) )
+      self.dd[region] = this
 
   def setKeyDates(self,kd):
     self.key_dates = kd
@@ -210,6 +230,107 @@ class Cases(object):
         if this[imx] > 1000 and abs(f3[1]) < 20*abs(f3[0]):
           print( self.headings[ir], this[imx], f3 )
 
+class ACAPS(object):
+  def __init__(self):
+    """Database of measures taken by Governments ... just over 16k lines ... on June 1st."""
+
+##
+## reading this with pandas is painfully slow
+##
+##    self.pd = pandas.read_excel( "acaps-_covid19_government_measures_dataset.xlsx", sheet_name='Database' )
+    wb = xlrd.open_workbook( "acaps-_covid19_government_measures_dataset.xlsx" )
+    s = wb.sheet_by_name( 'Database' )
+    self.countries = set()
+    kk = 0
+    cmap = {  'Czech republic':'Czech Republic', 
+              'Moldova Republic Of':'Moldova Republic of',
+              'kenya':'Kenya' }
+
+    for i in range(1,s.nrows):
+        kk += 1
+        this = s.row(i)[1].value
+        if (kk//20)*20 == kk:
+          print( kk,  this  )
+        self.countries.add( cmap.get(this,this)  )
+
+class JH_Covid(object):
+  def __init__(self):
+    """Global confirmed cases.
+       China, Australia, Canada only provided at the state level .. need to aggregate
+       Not in ACAPS:
+       'Andorra', 
+         'Brunei' --> 'Brunei Darussalam'
+         'Congo (Brazzaville)' --> 'Congo'
+          'Congo (Kinshasa)' --> 'Congo DR'
+          "Cote d'Ivoire" --> "Côte d'Ivoire"
+          'Diamond Princess'
+          'Czechia' --> 'Czech Republic', 'Czech republic'
+          'Holy See'
+          'Korea, South' --> 'Korea Republic of'
+          'Moldova' --> 'Moldova Republic Of'¸ 'Moldova Republic of'
+          'Monaco' 
+          'North Macedonia' --> 'North Macedonia Republic Of'
+          'Russia' --> 'Russian Federation'
+          'Taiwan*' --> 
+          'US'  --> United States of America
+          'Vietnam' --> 'Viet Nam'
+          'Laos'
+          'West Bank and Gaza'
+          'Kosovo'
+          'Burma' --> 'Myanmar'
+          'MS Zaandam'
+          'Western Sahara'
+
+         Only in ACAPS:
+          ['', 'Australia', 'Brunei Darussalam', 'Canada', 'China', 'China, Hong Kong Special Administrative Region', 'Congo', 'Congo DR', 'Czech Republic', 'Czech republic', "Côte d'Ivoire", 'Kiribati', 'Korea DPR', 'Korea Republic of', 'Lao PDR', 'Marshall Islands', 'Micronesia', 'Moldova Republic Of', 'Moldova Republic of', 'Myanmar', 'Nauru', 'North Macedonia Republic Of', 'Palau', 'Palestine', 'Russian Federation', 'Samoa', 'Solomon Islands', 'Tonga', 'Turkmenistan', 'Tuvalu', 'United States of America', 'Vanuatu', 'Viet Nam', 'kenya']
+    """
+    self.agset = collections.defaultdict( set )
+    map_to_acaps = { 'Brunei':'Brunei Darussalam',
+          'Congo (Brazzaville)':'Congo',
+          'Congo (Kinshasa)':'Congo DR',
+          "Cote d'Ivoire":"Côte d'Ivoire",
+          'Czechia':'Czech Republic',
+          'Korea, South':'Korea Republic of',
+          'Moldova':'Moldova Republic of',
+          'North Macedonia':'North Macedonia Republic Of',
+          'Russia':'Russian Federation',
+          'US':'United States of America',
+          'Vietnam':'Viet Nam',
+          'Burma':'Myanmar' }
+
+    ## starts 22nd Jan.
+    ### with ref="2020-01-01", starting at "21"
+    ##
+    jh = pandas.read_csv( "time_series_covid19_confirmed_global.csv" )
+    self.jh = jh
+    self.dates = jh.columns[4:]
+
+    mdy = [x.split('/') for x in self.dates]
+    self.jday =   [datetime.datetime( y,m,d).timetuple().tm_yday for m,d,y in mdy]
+
+    self.cases = jh.values[:,4:]
+    self.countries = [ ]
+    self.regions = [ ]
+    self.lines = [ ]
+    self.dd = dict()
+    self.dd['date'] = self.jday
+    self.data_mask_value = -1.e20
+
+    for i in jh.index:
+      c0 = jh.values[i,1]
+      c0 = map_to_acaps.get( c0, c0 )
+      if type( jh.values[i,0] ) == type(''):
+        r0 = '%s (%s)' % (c0,jh.values[i,0])
+        self.regions.append( r0 )
+        self.lines.append( r0 )
+        self.agset[c0].add( r0 )
+      else:
+        this = jh.values[i,4:].tolist()
+        self.dd[c0] = [this[j+1] - this[j] for j in range(len(self.dates)-1)]
+        self.countries.append( c0 )
+        self.lines.append( c0 )
+     
+    
 
 
 if __name__ == "__main__":

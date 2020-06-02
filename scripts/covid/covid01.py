@@ -2,7 +2,8 @@ import rk
 import numpy
 import datetime, collections
 import matplotlib.pyplot as plt
-from utils import get_key_dates, Cases
+import utils
+from utils import get_key_dates, Cases, english_regions
 import model
 
 ## python2.7
@@ -178,17 +179,33 @@ class Addplots(object):
       print (country, f3)
     return (xsc,ysc, imx)
 
+mode = "regions"
 mode = "fitfew"
+mode = "fitfew_jh"
 
 if mode == "many":
   countries = ["New Zealand","China","South Korea","Thailand","South Africa","Greece","France","Germany","United States","Italy","Denmark","Sweden","Austria","Iceland","United Kingdom"]
   colors = ["purple","red","green","orange","pink","black","cyan","purple","red","green","orange","pink","black","cyan", "purple","red","green","orange"]
   title = '%s .. Savgoy-Gorsky[%s,%s]' % (country,ww,np)
   fntag = ""
+
+elif mode == "fitfew_jh":
+  countries = ["New Zealand","Austria","Germany","France","Italy","Spain","Denmark","Greece","United Kingdom"]
+  wlrf = .10
+  fntag = "_wlrf_b%3.3i" % (wlrf*100)
+  title = 'JH Cases Reported,  linear relaxation filter[%s]' % (wlrf)
+  colors = ["red","green","pink","orange","blue","brown","magenta","cyan","black","midnightblue"]
+
 elif mode == "fitfew":
-  countries = ["China","New Zealand","Austria","Germany","France","Italy","Spain","Denmark","Greece","England"]
+  countries = ["China","New Zealand","Austria","Germany","France","Italy","Spain","Denmark","Greece","England","United Kingdom"]
   ##countries = ["China","New Zealand","Austria","Germany","France","Italy","Spain","Greece"]
   ##countries = ["China","England"]
+  wlrf = .10
+  fntag = "_wlrf_b%3.3i" % (wlrf*100)
+  title = 'Cases Reported,  linear relaxation filter[%s]' % (wlrf)
+  colors = ["purple","red","green","pink","orange","blue","brown","magenta","cyan","black","midnightblue"]
+elif mode == "regions":
+  countries = ["England",] + english_regions
   wlrf = .10
   fntag = "_wlrf_b%3.3i" % (wlrf*100)
   title = 'Cases Reported,  linear relaxation filter[%s]' % (wlrf)
@@ -236,12 +253,18 @@ c.setOther( dths )
 c.setKeyDates( get_key_dates() )
 c.analysis01()
 
+if mode == "fitfew_jh":
+  c00 = c
+  c = utils.JH_Covid()
+  c.key_dates = c00.key_dates
+
 withFilter=True
 ww = 11
 np = 1
 withFilter &= np != 0
 
-f, ax = plt.subplots(1)
+## figsize: set figure size (inches)
+f, ax = plt.subplots(1, figsize=(7.,4.) )
 
 ic =0
 
@@ -252,13 +275,17 @@ adder = Addplots(0.0,0.0,filter="relax_linear",filter_data = {"weight":wlrf}, ce
 ##plt.ylim(-0.1,2.0)
 annotate_dict = None
 for country in countries:
-  if mode == "fitfew":
+  if mode in [ "fitfew", "fitfew_jh"]:
     ix = 30 + ic*8
     annotate_dict = {"xytext":(80.,0.3 + ic*0.08), "xy_index":(ic+1)*20, "annotate_y":0.1+ic*0.07 }
   try:
     adder.addplot_by_country( country, c, ax,color=colors[ic],filter=withFilter, annotate=annotate_dict )
   except DebugFlowControl as dbg:
     print ("Caught exception for %s" % country)
+    raise
+  except:
+    print ("Failed %s" % country )
+    raise
   ic += 1
 
 if mode == "many":
@@ -271,7 +298,7 @@ else:
     total = [ sum( [v[i] for k, v in adder.filter_residues.items() if k != "Total"] ) for i in range(ll)]
     adder.filter_residues["Total"] = total
 
-plt.savefig("covid%s.png" % fntag, bbox_inches='tight')
+plt.savefig("covid%s.png" % fntag, bbox_inches='tight' )
 
 #title = 'test, gamma = 0.8 -> 0.1'
 plt.ylabel(title)

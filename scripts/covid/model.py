@@ -24,13 +24,17 @@ def relax_linear_fit(obs,w,relative_w = None, end_weighting={"lfrac":30, "amp":2
 
     if masked:
       mres = res.copy()
-      i99 = max( [i for i in range( imx, len(obs) ) if not obs.mask[i] ] )
-      if any( [obs.mask[i] for i in range( imx )] ):
-        i00 = max( [i for i in range( imx ) if obs.mask[i] ] ) + 1
-        mres.mask[:i00] = True
-      else:
+      if obs.mask == False:
+        i99 = max( [i for i in range( imx, len(obs) )  ] )
         i00 = 0
-      mres.mask[i99+1:] = True
+      else:
+        i99 = max( [i for i in range( imx, len(obs) ) if not obs.mask[i] ] )
+        if any( [obs.mask[i] for i in range( imx )] ):
+          i00 = max( [i for i in range( imx ) if obs.mask[i] ] ) + 1
+          mres.mask[:i00] = True
+        else:
+          i00 = 0
+        mres.mask[i99+1:] = True
       res = res[i00:i99+1]
       obs = obs[i00:i99+1]
       imx = numpy.argmax( obs )
@@ -46,7 +50,7 @@ def relax_linear_fit(obs,w,relative_w = None, end_weighting={"lfrac":30, "amp":2
       ww = [x*w for x in relative_w]
 
     if end_weighting != None:
-      nn = (len(obs)*end_weighting["lfrac"])/100
+      nn = int( (len(obs)*end_weighting["lfrac"])/100 )
       sc = [0.]*nn
       for i in range(nn):
         sc[i] = 1. + i*float( end_weighting["amp"] - 1 )/(nn-1)
