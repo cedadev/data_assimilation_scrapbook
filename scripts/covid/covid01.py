@@ -140,12 +140,15 @@ class Addplots(object):
     if c.key_dates != None and country in c.key_dates:
       for event in c.key_dates[country]:
         idx, event_type, description = event
-        id = c.dd['date'].index( idx )
-        mrkr = {'lockdown':'v', 'distancing':'o', 'initial':'s', 'event':"P"}.get( event_type, '-' )
-        xd = xsc[id-ioff]
-        yd = ysc[id-ioff]
-        print( "Marker ",xd,yd,country )
-        ax.plot( xd, yd, mrkr, color=color )
+        if idx not in c.dd['date']:
+           continue
+        else:
+          id = c.dd['date'].index( idx )
+          mrkr = {'lockdown':'v', 'distancing':'o', 'initial':'s', 'event':"P"}.get( event_type, '-' )
+          xd = xsc[id-ioff]
+          yd = ysc[id-ioff]
+          print( "Marker ",xd,yd,country )
+          ax.plot( xd, yd, mrkr, color=color )
  
     bbox_props = dict(fc="cyan", ec="b", lw=1, boxstyle="round")
     if annotate != None:
@@ -190,7 +193,8 @@ if mode == "many":
   fntag = ""
 
 elif mode == "fitfew_jh":
-  countries = ["New Zealand","Austria","Germany","France","Italy","Spain","Denmark","Greece","United Kingdom"]
+  countries = ["New Zealand","Austria","Germany","France","Italy","Spain","Denmark","Greece",'China (Hubei)',
+                       "United Kingdom"]
   wlrf = .10
   fntag = "_wlrf_b%3.3i" % (wlrf*100)
   title = 'JH Cases Reported,  linear relaxation filter[%s]' % (wlrf)

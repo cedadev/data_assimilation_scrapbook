@@ -67,7 +67,10 @@ def get_key_dates():
          description= parts[3]
       else:
          description = ""
-      jdate = dconv.convert( sdate )
+
+      y,m,d = [int(xx) for xx in sdate.split('-')]
+      jdate = datetime.datetime( y,m,d).timetuple().tm_yday
+      ##jdate = dconv.convert( sdate )
       results[country].add( (jdate,key,description) )
     return results
 
@@ -344,27 +347,30 @@ class JH_Covid(object):
     self.jh = jh
     self.dates = jh.columns[4:]
 
-    mdy = [x.split('/') for x in self.dates]
-    self.jday =   [datetime.datetime( y,m,d).timetuple().tm_yday for m,d,y in mdy]
+    mdy = [[int(xx) for xx in x.split('/')] for x in self.dates]
+    self.jday = [datetime.datetime( y,m,d).timetuple().tm_yday for m,d,y in mdy]
 
     self.cases = jh.values[:,4:]
     self.countries = [ ]
     self.regions = [ ]
+    self.regions_by_country = collections.defaultdict( set )
     self.lines = [ ]
     self.dd = dict()
-    self.dd['date'] = self.jday
+    self.dd['date'] = self.jday[1:]
     self.data_mask_value = -1.e20
 
     for i in jh.index:
       c0 = jh.values[i,1]
       c0 = map_to_acaps.get( c0, c0 )
+      this = jh.values[i,4:].tolist()
       if type( jh.values[i,0] ) == type(''):
         r0 = '%s (%s)' % (c0,jh.values[i,0])
         self.regions.append( r0 )
+        self.regions_by_country[c0].add( r0 )
         self.lines.append( r0 )
         self.agset[c0].add( r0 )
+        self.dd[r0] = [this[j+1] - this[j] for j in range(len(self.dates)-1)]
       else:
-        this = jh.values[i,4:].tolist()
         self.dd[c0] = [this[j+1] - this[j] for j in range(len(self.dates)-1)]
         self.countries.append( c0 )
         self.lines.append( c0 )
